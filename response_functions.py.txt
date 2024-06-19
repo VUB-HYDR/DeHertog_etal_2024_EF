@@ -1,0 +1,158 @@
+# ----------------------------------------------------------------------------------------------------------------------------------------------
+# The purpose of this script is to calculate the levels of labour capacity/productivity
+# for three levels of work intensity (200W, 300W, 400W) using WBGT
+# and three heat assessment metrics (Hothaps vs. ISO/NIOSH vs. Laboratory-controlled).
+#
+#	ISO/NIOSH metric:
+#          Kjellstrom, T., Holmer, I., Lemke, B., 2009. 
+#          Workplace heat stress, health and productivity - an increasing challenge for low and middle-income countries during climate change. 
+#          Glob Health Action 2. https://doi.org/10.3402/gha.v2i0.2047
+#
+#	Hothaps metric:
+#         Bröde, P., Fiala, D., Lemke, B., Kjellstrom, T., 2018. 
+#         Estimated work ability in warm outdoor environments depends on the chosen heat stress assessment metric. 
+#         Int J Biometeorol 62, 331-345. https://doi.org/10.1007/s00484-017-1346-9
+#
+#	Laboratory-controlled ERF:
+#	  Foster, J., Smallcombe, J.W., Hodder, S., Jay, O., Flouris, A.D., Nybo, L., Havenith, G., 2021.
+#	  An advanced empirical model for quantifying the impact of heat and climate change on human physical work capacity.
+#	  Int J Biometeorol 65, 1215–1229. https://doi.org/10.1007/s00484-021-02105-0
+# ---------------------------------------------------------------------------------------------------------------------------------------------
+
+import pandas as pd
+import numpy as np
+import xarray as xr
+
+# NOTES:
+# - Make a plot showing the levels of work capacity.
+# - Limit Hothaps for extreme temperatures, similar to NIOSH-ISO. 
+
+# -------------------------------------------------------------------------------------------------------------------------------------------
+# 	Parameters of ERF: 
+# -------------------------------------------------------------------------------------------------------------------------------------------
+
+# ISO/NIOSH heat assessment metric:
+# ---	First row contains the levels of workability in percent.
+# --- 	Sequential rows contain the levels of corresponding WBGT.
+# --	"low"  is low-intensity work (200W),
+#       "mod"  is moderate intensity works (300W),
+# 	"high" is high-intensity work (400W).
+par_iso = {"work":     [100,  75,    50,    25,     0],
+           "low":      [31,   31.5,  32,    32.5,  39],
+           "moderate": [28,   29,    30.5,  32,    37],
+           "high":     [27,   27.5,  29.5,  31.5,  36]}
+
+# 	Convert to dataframe:
+par_iso = pd.DataFrame(par_iso, columns = ["work", "low", "moderate", "high"])
+#print(par_iso)
+
+# Hothaps heat assessmetn metric:
+# --- Contains the parameters to calibrate the Hothaps function.
+par_hothaps = {"high":     [30.94, 16.64],
+               "moderate": [32.93, 17.81],
+               "low":      [34.64, 22.72]}
+
+# Convert to dataframe: 
+par_hothaps = pd.DataFrame(par_hothaps, columns = ["high", "moderate", "low"])
+#print(par_hothaps)
+
+# -------------------------------------------------------------------------------------------------------------------------------------------
+# 	ERF to calculate the capacity/productivity of labour using WBGT/ESI:  
+# -------------------------------------------------------------------------------------------------------------------------------------------
+def f_calc_labour_response(wbgt, metric, work):
+    """ This function calculates the levels of workability based on WBGT
+        for three levels of work intensity (200W,300W,400W) and two heat assessment metrics (ISO/NIOSH vs. Hothaps).
+        Arguments:
+                  wbgt   : wet bulb globe temperature (C)
+                  metric : heat assessment metric (ISO/NIOSH or Hothaps)
+                  work   : level of work intensity (Watts)
+	Returns:
+ 		level of workability (e.g., IF 1, no heat-induced reduction in workability,
+		                            IF 0, no work because of high heat stress. 
+    """
+
+    # ISO/NIOSH metric:
+    if metric == "iso":
+        if work == "400W":
+            work_ability = xr.where(wbgt < 27, 100,
+                                    np.interp(wbgt, par_iso["high"], par_iso["work"]))
+        if work == "300W":
+            work_ability = xr.where(wbgt < 28, 100,
+                                    np.interp(wbgt, par_iso["moderate"], par_iso["work"]))
+        if work == "200W":
+            work_ability = xr.where(wbgt < 31, 100,
+                                    np.interp(wbgt, par_iso["low"], par_iso["work"]))
+        # 	Convert workability to rates:
+        work_ability = work_ability/100
+
+    # Hothaps metric:
+    if metric == "hothaps":
+        if work == "400W":
+            work_ability = xr.where(np.isnan(wbgt), np.nan, xr.where(wbgt >= 26, 0.1 + 0.9/(1 + (wbgt/par_hothaps.high[0])**par_hothaps.high[1]), 1))
+        if work == "300W":
+            work_ability = xr.where(np.isnan(wbgt), np.nan, xr.where(wbgt >= 26, 0.1 + 0.9/(1 + (wbgt/par_hothaps.moderate[0])**par_hothaps.moderate[1]), 1))
+        if work == "200W":
+            work_ability = xr.where(np.isnan(wbgt), np.nan, xr.where(wbgt >= 26, 0.1 + 0.9/(1 + (wbgt/par_hothaps.low[0])**par_hothaps.low[1]), 1))
+
+    # Laboratory controlled function:
+    # -- Only for high-intensity work is provided. 
+    if metric == "laboratory":
+        work_ability = xr.where(np.isnan(wbgt), np.nan, xr.where(wbgt >= 10, 1/(1 + (33.63/wbgt)**(-6.33)), 1))
+
+    return(work_ability)
+
+# ------------------------------------------------------------------------------------------------------------------------------------
+#	TEST: 
+# ------------------------------------------------------------------------------------------------------------------------------------
+
+# wbgt = 40
+# work = "400W"
+
+# test_lab     = f_calc_labour_response(wbgt, "laboratory", work)
+# test_iso     = f_calc_labour_response(wbgt, "iso",        work)
+# test_hothaps = f_calc_labour_response(wbgt, "hothaps",    work)
+
+# print("Laboratory:", test_lab)
+# print("ISO:    ",    test_iso)
+# print("Hothaps:",    test_hothaps)
+
+# ds_test      = xr.DataArray([wbgt, float("nan")])  # Or ds_test = [wbgt, np.NaN]
+# test_lab     = f_calc_labour_response(ds_test, "laboratory", work)
+# test_iso     = f_calc_labour_response(ds_test, "hothaps",    work)
+# test_hothaps = f_calc_labour_response(ds_test, "iso",        work)
+
+# print("Laboratory:    ", test_iso)
+# print("ISO:    ",        test_iso)
+# print("Hothaps:",        test_hothaps)
+
+# ------------------------------------------------------------------------------------------------------------------------------------
+#	Plot: 
+# ------------------------------------------------------------------------------------------------------------------------------------
+
+# from plotnine import *
+
+# df = pd.DataFrame({"esi": list(range(25, 40+1))})
+
+# df["NIOSH"]      = df.apply(lambda row: f_calc_labour_response(row["esi"], "iso",        "400W"), axis = 1)
+# df["Hothaps"]    = df.apply(lambda row: f_calc_labour_response(row["esi"], "hothaps",    "400W"), axis = 1)
+# df["Laboratory"] = df.apply(lambda row: f_calc_labour_response(row["esi"], "laboratory", "400W"), axis = 1)
+
+# df = df.melt(id_vars = "esi", var_name = "erf", value_name = "value")
+
+# df["value"] = df["value"].astype("float")
+# df["value"] *= 100
+
+# plt = (ggplot(df)
+#        + aes(x = "esi", y = "value", color = "erf")
+#        + geom_line(size = 1.5)
+#        + theme_bw()
+#        + labs(y = "Labour capacity [%]", x = "ESI [Celsius]", color = "ERF:")
+# )
+
+# print(plt)
+
+# ggsave(plt, "/storage/qbo/users/antor/workers/results/04_figures/erf.png", dpi = 400)
+
+# -------------------------------------------------------------------------------------------------------------------------------------
+
+

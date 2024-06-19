@@ -1,0 +1,88 @@
+# -------------------------------------------------------------------------------
+# 	The purpose of this script is to calculate different heat stress indexe:
+#	1) Wet Bulb Globe Temperature (WBGT) using the Stull approach.
+#	2) Environmental Stress Index (ESI). 
+#
+# 	Sources:
+#		Stull, R., 2011. Wet-Bulb Temperature from Relative Humidity and Air Temperature. Journal of Applied Meteorology and Climatology 50, 2267–2269. https://doi.org/10.1175/JAMC-D-11-0143.1
+#       	R Heatstress package written by A.Casanueva. https://rdrr.io/github/anacv/HeatStress/src/R/wbt.Stull.R
+#               Moran, D.S. et al. An environmental stress index (ESI) as a substitute for the wet bulb globe temperature (WBGT). J. Therm. Biol. 26, 427–431 (2001).
+#               Moran, D.S. & Epstein, Y. Evaluation of the environmental stress index (ESI) for hot/dry and hot/wet climates. Ind. Health 44, 399–403 (2006).
+# ------------------------------------------------------------------------------
+
+import numpy as np
+import xarray as xr
+
+# 	Other relevant sources: 
+#https://journals.ametsoc.org/view/journals/apme/50/11/jamc-d-11-0143.1.xml
+#https://rdrr.io/github/anacv/HeatStress/src/R/wbt.Stull.R
+#https://www.nature.com/articles/s41597-021-01010-w#Sec2
+
+# 	Parameters used to calculate wet bulb temperature using the Stull approach: 
+c1 = 0.151977
+c2 = 8.313659
+c3 = 1.676331
+c4 = 0.00391838
+c5 = 0.023101
+c6 = 4.686035
+  
+# 	Function to calculate WBT and WBGT using the Stull approach: 
+def f_calc_wbgt_stull(tas, hurs):
+        """ This function calculates the wet bulb temperature (WBT) 
+	    and wet bulb globe temperature (WBGT) using the Stull approach. 
+        Arguments:
+                  tas : air temperature (C)
+                  hurs: relative humidity (%)
+	Returns:
+ 		wbgt: wet bulb temperature (C)
+		wbgt: wet bulb globe temperature (C)
+	"""
+        
+        # 	Calculate the wet bulb temperature (C):
+        wbt_stull = tas*np.arctan(c1*np.sqrt(hurs + c2)) + np.arctan(tas + hurs) - np.arctan(hurs - c3) + c4*(hurs**(3/2))*np.arctan(c5*hurs) - c6
+
+        # 	Calculate the wet bulb globe temperature (C):
+        wbgt_stull = 0.67*wbt_stull + 0.33*tas
+
+        return wbgt_stull
+
+def f_calc_esi(tas, hurs, rsds):
+        """ This function calculates the Evaluation of the Environmental Stress Index (ESI).
+        Arguments:
+                  tas : air temperature (C)
+                  hurs: relative humidity (%)
+		  rsds: solar shortwave downwelling radiation (both direct and diffused, in W/m2)
+	Returns:
+ 		  esi: Environmantal Stress Index (C)
+	"""
+
+        #	Calculate ESI: 
+        esi  = 0.63*tas - 0.03*hurs + 0.002*rsds + 0.0054*tas*hurs - (0.073/(0.1 + rsds))
+        
+        return(esi)
+
+# ------------------------------------------------------------------------------------------------------------------
+# 	Test: 
+# -----------------------------------------------------------------------------------------------------------------
+
+# tas  = 32
+# hurs = 40
+# rsds = 500
+
+# wbgt_stull = f_calc_wbgt_stull(tas, hurs)
+# esi        = f_calc_esi(tas, hurs, rsds)
+# print("WBGTid_Stull: ", round(wbgt_stull, 2))
+# print("ESI:          ", round(esi, 2))
+
+# tas  = [30, 32]
+# hurs = [40, 50]
+# rsds = [213, 220]
+# tas  = xr.DataArray(tas)
+# hurs = xr.DataArray(hurs)
+# rsds = xr.DataArray(rsds)
+
+# wbgt_stull = f_calc_wbgt_stull(tas, hurs)
+# esi        = f_calc_esi(tas, hurs, rsds)
+# print("WBGTid_Stull: ", wbgt_stull)
+# print("ESI:          ", esi)
+
